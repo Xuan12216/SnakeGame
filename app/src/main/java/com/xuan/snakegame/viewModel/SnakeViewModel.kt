@@ -11,6 +11,7 @@ import com.xuan.snakegame.`object`.FoodType
 import com.xuan.snakegame.`object`.GameState
 import com.xuan.snakegame.`object`.snake.SnakeAI
 import com.xuan.snakegame.`object`.snake.SnakeQLearningAI
+import com.xuan.snakegame.util.AppUtils
 import com.xuan.snakegame.util.SharedPreferencesUtils
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -296,85 +297,36 @@ class SnakeViewModel(context: Context) : ViewModel() {
     // 启动Q-learning AI控制
     private fun startAIControl2() {
         viewModelScope.launch {
+            snakeQLearningAI.setEpsilon(if (AppUtils.isInvincible(_gameState.value)) 0.3 else 0.1) // 无敌模式下增加探索率
             while (_gameState.value.isAIMode2 && !_gameState.value.isGameOver) {
                 val currentState = _gameState.value
-                val head = currentState.snake.first()
-                val food = currentState.food.position
+                val action = snakeQLearningAI.evaluateDirections(currentState)
 
-                // 计算蛇头和食物的相对位置
-                val relativeX = if (currentState.isOpen) {
-                    val dx = food.first - head.first
-                    val wrappedDx = (dx + currentState.gridSize/2) % currentState.gridSize - currentState.gridSize/2
-                    wrappedDx
-                } else {
-                    food.first - head.first
+                changeDirection(action)
+
+                delay(currentState.gameSpeed)
+
+                // 处理奖励和更新 Q 值
+                val nextState = _gameState.value
+
+                val head = _gameState.value.snake.first()
+                val newHead = when (action) {
+                    Direction.UP -> Pair(head.first, (head.second - 1))
+                    Direction.DOWN -> Pair(head.first, (head.second + 1))
+                    Direction.LEFT -> Pair((head.first - 1), head.second)
+                    Direction.RIGHT -> Pair((head.first + 1), head.second)
+                    else -> {head}
                 }
 
-                val relativeY = if (currentState.isOpen) {
-                    val dy = food.second - head.second
-                    val wrappedDy = (dy + currentState.gridSize/2) % currentState.gridSize - currentState.gridSize/2
-                    wrappedDy
-                } else {
-                    food.second - head.second
+                val reward = when {
+                    nextState.isGameOver -> -100.0
+                    newHead == nextState.food.position -> 10.0
+                    else -> -1.0
                 }
 
-                // 获取危险方向
-                val dangerDirections = Direction.values().filter { direction ->
-                    val next = snakeQLearningAI.getNextPosition(head, direction)
-                    !snakeQLearningAI.isSafeMove(next, currentState)
-                }.toSet()
-
-                // 构建状态字符串
-                val stateString = snakeQLearningAI.encodeState(currentState, relativeX, relativeY, dangerDirections)
-
-                // 获取有效方向
-                val validDirections = Direction.values()
-                    .filter { it != Direction.CENTER }
-                    .filter { direction ->
-                        val next = snakeQLearningAI.getNextPosition(head, direction)
-                        snakeQLearningAI.isSafeMove(next, currentState)
-                    }
-
-                // 使用 Q-Learning 获取下一个动作
-                val nextDirection = snakeQLearningAI.getNextAction(stateString, validDirections)
-
-                // 计算下一步位置
-                val nextHead = snakeQLearningAI.getNextPosition(head, nextDirection)
-
-                // 计算奖励
-                val reward = snakeQLearningAI.calculateReward(currentState, nextHead, food)
-
-                // 更新方向
-                changeDirection(nextDirection)
-                delay(_gameState.value.gameSpeed) // 短暂延迟等待状态更新
-
-                // 获取新状态
-                val newState = _gameState.value
-                val newStateString = snakeQLearningAI.encodeState(
-                    newState,
-                    food.first - nextHead.first,
-                    food.second - nextHead.second,
-                    snakeQLearningAI.getUpdatedDangerDirections(nextHead, newState)
-                )
-
-                // 获取新状态下的有效动作
-                val newValidDirections = Direction.values()
-                    .filter { it != Direction.CENTER }
-                    .filter { direction ->
-                        val next = snakeQLearningAI.getNextPosition(nextHead, direction)
-                        snakeQLearningAI.isSafeMove(next, newState)
-                    }
-
-                // 更新 Q 表
-                snakeQLearningAI.updateQ(
-                    oldState = stateString,
-                    action = nextDirection,
-                    reward = reward,
-                    newState = newStateString,
-                    validActions = newValidDirections
-                )
-
-                delay(_gameState.value.gameSpeed)
+                val state = snakeQLearningAI.getState(currentState)
+                val nextStateString = snakeQLearningAI.getState(nextState)
+                snakeQLearningAI.updateQValue(state, action, reward, nextStateString)
             }
         }
     }

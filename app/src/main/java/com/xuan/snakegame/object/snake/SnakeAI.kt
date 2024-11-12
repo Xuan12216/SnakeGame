@@ -2,13 +2,10 @@ package com.xuan.snakegame.`object`.snake
 
 import com.xuan.snakegame.`object`.Direction
 import com.xuan.snakegame.`object`.GameState
+import com.xuan.snakegame.util.AppUtils
 import kotlin.math.abs
 
 class SnakeAI {
-
-    private fun isInvincible(gameState: GameState): Boolean {
-        return gameState.invincibleCountdownTime > 1000
-    }
 
     // 檢查移動是否安全
     private fun isSafeMove(
@@ -21,7 +18,7 @@ class SnakeAI {
                 (newHead.first + gameState.gridSize) % gameState.gridSize,
                 (newHead.second + gameState.gridSize) % gameState.gridSize
             )
-            return isInvincible(gameState) || !gameState.snake.contains(adjustedHead)
+            return AppUtils.isInvincible(gameState) || !gameState.snake.contains(adjustedHead)
         }
 
         // 檢查是否撞牆
@@ -31,7 +28,7 @@ class SnakeAI {
         }
 
         // 檢查是否撞到自己
-        return isInvincible(gameState) || !gameState.snake.contains(newHead)
+        return AppUtils.isInvincible(gameState) || !gameState.snake.contains(newHead)
     }
 
     // 計算兩點間的曼哈頓距離，考慮環繞情況
@@ -70,7 +67,7 @@ class SnakeAI {
         val head = gameState.snake.first()
         val food = gameState.food.position
         val bonusFood = gameState.bonusFood
-        val isInvincible = isInvincible(gameState)
+        val isInvincible = AppUtils.isInvincible(gameState)
 
         // 所有可能的方向
         val possibleDirections = listOf(Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT)

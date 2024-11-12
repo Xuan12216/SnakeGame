@@ -1,167 +1,112 @@
 package com.xuan.snakegame.`object`.snake
 
 import com.xuan.snakegame.`object`.Direction
+import com.xuan.snakegame.`object`.FoodType
 import com.xuan.snakegame.`object`.GameState
+import com.xuan.snakegame.util.AppUtils
 
 class SnakeQLearningAI {
     // Q-Table: State -> (Action -> Value)
     private val qTable = mutableMapOf<String, MutableMap<Direction, Double>>()
-    private val learningRate = 0.1
-    private val discountFactor = 0.9
-    private var explorationRate = 0.3 // 提高初始探索率
-    private val explorationDecay = 0.995 // 探索率衰减因子
+    private val directions = listOf(Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT)
+
+    // Hyperparameters
+    private val learningRate = 0.1 // α
+    private val discountFactor = 0.9 // γ
+    private var epsilon = 0.1 // ε (Exploration rate)
+
+    // 获取状态表示 (头部位置 + 食物位置 + 当前方向)
+    fun getState(gameState: GameState): String {
+        val head = gameState.snake.first()
+        val food = gameState.food.position
+        return "${head.first},${head.second}:${food.first},${food.second}:${gameState.direction}"
+    }
+
+    // 获取动作的 Q 值，若没有则初始化
+    private fun getQValue(state: String, action: Direction): Double {
+        return qTable.getOrPut(state) { mutableMapOf() }.getOrDefault(action, 0.0)
+    }
+
+    // 更新 Q 值
+    fun updateQValue(state: String, action: Direction, reward: Double, nextState: String) {
+        val oldQ = getQValue(state, action)
+        val nextMaxQ = directions.maxOfOrNull { getQValue(nextState, it) } ?: 0.0
+        val newQ = oldQ + learningRate * (reward + discountFactor * nextMaxQ - oldQ)
+        qTable[state]?.set(action, newQ)
+    }
+
+    // 设置探索率 (用于训练过程的调整)
+    fun setEpsilon(newEpsilon: Double) {
+        epsilon = newEpsilon
+    }
 
     //=====
 
-    // 获取下一个动作，使用ε-greedy策略
-    fun getNextAction(state: String, validActions: List<Direction>): Direction {
-        if (validActions.isEmpty()) return Direction.CENTER
+    fun evaluateDirections(gameState: GameState): Direction {
+        val head = gameState.snake.first()
+        val food = gameState.food.position
+        val directions = listOf(Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT)
+        val validDirections = mutableMapOf<Direction, Double>()
 
-        // 探索：随机选择动作
-        if (Math.random() < explorationRate) {
-            return validActions.random()
-        }
+        val isInvincible = AppUtils.isInvincible(gameState) // 假设 GameState 有一个 isInvincible 标记
 
-        // 利用：选择最佳动作
-        return getBestAction(state, validActions)
-    }
-
-    // 获取状态下的最佳动作
-    private fun getBestAction(state: String, validActions: List<Direction>): Direction {
-        if (!qTable.containsKey(state)) {
-            qTable[state] = mutableMapOf()
-        }
-
-        val stateActions = qTable[state]!!
-        // 为未见过的动作初始化随机的小Q值
-        validActions.forEach { action ->
-            if (!stateActions.containsKey(action)) {
-                stateActions[action] = Math.random() * 0.1
+        for (direction in directions) {
+            val newHead = when (direction) {
+                Direction.UP -> Pair(head.first, head.second - 1)
+                Direction.DOWN -> Pair(head.first, head.second + 1)
+                Direction.LEFT -> Pair(head.first - 1, head.second)
+                Direction.RIGHT -> Pair(head.first + 1, head.second)
+                Direction.CENTER -> continue
             }
-        }
 
-        // 从有效动作中选择Q值最高的
-        return validActions.maxByOrNull { stateActions[it] ?: 0.0 } ?: validActions.first()
-    }
+            // 无敌模式下不检查碰撞，普通模式下需要检查碰撞
+            if (!isInvincible && isCollision(newHead, gameState)) {
+                validDirections[direction] = -1000.0 // 普通模式下，撞墙或撞蛇身评分最低
+            } else {
+                // 计算距离评分 (越靠近食物分数越高)
+                val distanceScore = 100.0 / (manhattanDistance(newHead, food) + 1)
 
-    // 更新Q值
-    fun updateQ(oldState: String, action: Direction, reward: Double, newState: String, validActions: List<Direction>) {
-        if (!qTable.containsKey(oldState)) {
-            qTable[oldState] = mutableMapOf()
-        }
-        if (!qTable.containsKey(newState)) {
-            qTable[newState] = mutableMapOf()
-        }
+                // 根据 Q-Table 的值进行评分
+                val state = getState(gameState)
+                val qValueScore = getQValue(state, direction)
 
-        val oldStateActions = qTable[oldState]!!
-        if (!oldStateActions.containsKey(action)) {
-            oldStateActions[action] = 0.0
-        }
-
-        // 获取新状态下的最大Q值
-        val maxNextQ = if (validActions.isEmpty()) 0.0 else {
-            validActions.maxOf { qTable[newState]?.get(it) ?: 0.0 }
-        }
-
-        // 更新Q值
-        val oldQ = oldStateActions[action] ?: 0.0
-        val newQ = oldQ + learningRate * (reward + discountFactor * maxNextQ - oldQ)
-        oldStateActions[action] = newQ
-
-        // 衰减探索率
-        explorationRate *= explorationDecay
-        // 设置探索率下限
-        if (explorationRate < 0.01) explorationRate = 0.01
-    }
-
-    // 辅助函数：编码游戏状态
-    fun encodeState(
-        state: GameState,
-        relativeX: Int,
-        relativeY: Int,
-        dangerDirections: Set<Direction>
-    ): String {
-        return "$relativeX,$relativeY|${dangerDirections.joinToString("")}"
-    }
-
-    // 计算两点间距离（考虑边界情况）
-    private fun calculateDistance(
-        pos1: Pair<Int, Int>,
-        pos2: Pair<Int, Int>,
-        isOpen: Boolean,
-        gridSize: Int
-    ): Int {
-        val dx = if (isOpen) {
-            val rawDx = kotlin.math.abs(pos1.first - pos2.first)
-            kotlin.math.min(rawDx, gridSize - rawDx)
-        } else {
-            kotlin.math.abs(pos1.first - pos2.first)
-        }
-
-        val dy = if (isOpen) {
-            val rawDy = kotlin.math.abs(pos1.second - pos2.second)
-            kotlin.math.min(rawDy, gridSize - rawDy)
-        } else {
-            kotlin.math.abs(pos1.second - pos2.second)
-        }
-
-        return dx + dy
-    }
-
-    // 辅助函数：获取下一个位置
-    fun getNextPosition(current: Pair<Int, Int>, direction: Direction): Pair<Int, Int> {
-        return when (direction) {
-            Direction.UP -> Pair(current.first, current.second - 1)
-            Direction.DOWN -> Pair(current.first, current.second + 1)
-            Direction.LEFT -> Pair(current.first - 1, current.second)
-            Direction.RIGHT -> Pair(current.first + 1, current.second)
-            else -> current
-        }
-    }
-
-    // 辅助函数：检查移动是否安全
-    fun isSafeMove(position: Pair<Int, Int>, state: GameState): Boolean {
-        if (state.isOpen) {
-            val adjustedPosition = Pair(
-                (position.first + state.gridSize) % state.gridSize,
-                (position.second + state.gridSize) % state.gridSize
-            )
-            return adjustedPosition !in state.snake
-        }
-
-        return position.first in 0 until state.gridSize &&
-                position.second in 0 until state.gridSize &&
-                position !in state.snake
-    }
-
-    // 更新后的奖励计算
-    fun calculateReward(
-        state: GameState,
-        nextHead: Pair<Int, Int>,
-        food: Pair<Int, Int>
-    ): Double {
-        return when {
-            !isSafeMove(nextHead, state) -> -100.0 // 碰撞惩罚
-            nextHead == food -> 100.0 // 吃到食物奖励
-            else -> {
-                // 计算距离变化
-                val currentDistance = calculateDistance(state.snake.first(), food, state.isOpen, state.gridSize)
-                val newDistance = calculateDistance(nextHead, food, state.isOpen, state.gridSize)
-                when {
-                    newDistance < currentDistance -> 2.0  // 增加接近食物的奖励
-                    newDistance > currentDistance -> -1.5 // 增加远离食物的惩罚
-                    else -> -0.5 // 增加停滞的惩罚
+                // 如果有道具食物，根据类型调整评分
+                var bonusScore = 0.0
+                gameState.bonusFood?.let { bonusFood ->
+                    if (newHead == bonusFood.position) {
+                        bonusScore = when (bonusFood.type) {
+                            FoodType.SPEED_UP -> 50.0
+                            FoodType.SLOW_DOWN -> 20.0
+                            FoodType.INVINCIBLE -> 100.0
+                            FoodType.SHORTEN -> 30.0
+                            else -> 0.0
+                        }
+                    }
                 }
+
+                // 无敌模式下额外奖励 (如更高的探索分数)
+                val invincibleBonus = if (isInvincible) 20.0 else 0.0
+
+                // 计算总评分
+                val totalScore = distanceScore + qValueScore + bonusScore + invincibleBonus
+
+                validDirections[direction] = totalScore
             }
         }
+
+        // 返回评分最高的方向
+        return validDirections.maxByOrNull { it.value }?.key ?: Direction.UP
     }
 
-    // 获取更新后的危险方向
-    fun getUpdatedDangerDirections(position: Pair<Int, Int>, state: GameState): Set<Direction> {
-        return Direction.values().filter { direction ->
-            val next = getNextPosition(position, direction)
-            !isSafeMove(next, state)
-        }.toSet()
+    private fun isCollision(position: Pair<Int, Int>, gameState: GameState): Boolean {
+        return position.first < 0 ||
+                position.first >= gameState.gridSize ||
+                position.second < 0 ||
+                position.second >= gameState.gridSize ||
+                position in gameState.snake
     }
 
+    private fun manhattanDistance(pos1: Pair<Int, Int>, pos2: Pair<Int, Int>): Int {
+        return kotlin.math.abs(pos1.first - pos2.first) + kotlin.math.abs(pos1.second - pos2.second)
+    }
 }
