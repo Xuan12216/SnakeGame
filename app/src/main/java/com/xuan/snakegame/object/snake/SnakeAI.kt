@@ -51,17 +51,6 @@ class SnakeAI {
         return dx + dy
     }
 
-    // 獲取下一個位置
-    private fun getNextPosition(current: Pair<Int, Int>, direction: Direction): Pair<Int, Int> {
-        return when (direction) {
-            Direction.UP -> Pair(current.first, current.second - 1)
-            Direction.DOWN -> Pair(current.first, current.second + 1)
-            Direction.LEFT -> Pair(current.first - 1, current.second)
-            Direction.RIGHT -> Pair(current.first + 1, current.second)
-            else -> current
-        }
-    }
-
     // 主要的AI決策邏輯
     fun getNextDirection(gameState: GameState): Direction {
         val head = gameState.snake.first()
@@ -82,7 +71,7 @@ class SnakeAI {
 
         // 評估每個方向
         val directionScores = possibleDirections.map { direction ->
-            val nextPos = getNextPosition(head, direction)
+            val nextPos = AppUtils.getNextPosition(head, direction)
             val adjustedPos = if (gameState.isOpen) {
                 Pair(
                     (nextPos.first + gameState.gridSize) % gameState.gridSize,
@@ -119,7 +108,7 @@ class SnakeAI {
         // 如果所有方向都不安全且處於無敵狀態，選擇距離目標最近的方向
         return if (bestDirection?.second == Int.MIN_VALUE && isInvincible) {
             possibleDirections.minByOrNull { direction ->
-                val nextPos = getNextPosition(head, direction)
+                val nextPos = AppUtils.getNextPosition(head, direction)
                 if (gameState.isOpen) {
                     val adjustedPos = Pair(
                         (nextPos.first + gameState.gridSize) % gameState.gridSize,

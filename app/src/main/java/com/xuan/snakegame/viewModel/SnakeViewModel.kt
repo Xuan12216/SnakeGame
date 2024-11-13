@@ -9,8 +9,8 @@ import com.xuan.snakegame.`object`.Direction
 import com.xuan.snakegame.`object`.Food
 import com.xuan.snakegame.`object`.FoodType
 import com.xuan.snakegame.`object`.GameState
+import com.xuan.snakegame.`object`.snake.QLearningAgent
 import com.xuan.snakegame.`object`.snake.SnakeAI
-import com.xuan.snakegame.`object`.snake.SnakeQLearningAI
 import com.xuan.snakegame.util.AppUtils
 import com.xuan.snakegame.util.SharedPreferencesUtils
 import kotlinx.coroutines.Job
@@ -27,7 +27,7 @@ class SnakeViewModel(context: Context) : ViewModel() {
     //=====
     private val _gameState = MutableStateFlow(
         GameState(
-            snake = listOf(Pair(5, 5)),
+            snake = listOf(Pair(5, 5), Pair(4, 5)),
             food = Food(Pair(10, 10), type = FoodType.NORMAL),
             direction = Direction.CENTER,
             highScore = mPrefs.getInt(Constant.HIGH_SCORE, 0),
@@ -44,7 +44,7 @@ class SnakeViewModel(context: Context) : ViewModel() {
 
     //=====
     private val snakeAI = SnakeAI()//规则驱动的算法 (Rule-Based Algorithm)
-    private val snakeQLearningAI = SnakeQLearningAI()
+    private val qLearningAgent = QLearningAgent(context)
     //=====
     init { startGame() }
 
@@ -67,9 +67,15 @@ class SnakeViewModel(context: Context) : ViewModel() {
     fun restartGame() {
         val newHighScore = maxOf(_gameState.value.score, _gameState.value.highScore)
         mPrefs.saveInt(Constant.HIGH_SCORE, newHighScore)
+
+        // 如果是AI模式2，保存Q表
+        if (_gameState.value.isAIMode2) {
+            qLearningAgent.forceSave()
+        }
+
         _gameState.update {
             GameState(
-                snake = listOf(Pair(5, 5)),
+                snake = listOf(Pair(5, 5), Pair(4, 5)),
                 food = Food(Pair(10, 10), type = FoodType.NORMAL),
                 direction = Direction.CENTER,
                 highScore = newHighScore,
@@ -96,8 +102,8 @@ class SnakeViewModel(context: Context) : ViewModel() {
             // 处理方向为 CENTER 时，更新 bonusFood 和 invincible 的结束时间
             if (currentState.direction == Direction.CENTER) {
                 // 获取remain时间
-                val remainTime = calculateRemainTime(currentState.bonusFoodEndTime, currentTime)
-                val remainTimeInVincible = calculateRemainTime(currentState.invincibleTime, currentTime)
+                val remainTime = AppUtils.calculateRemainTime(currentState.bonusFoodEndTime, currentTime)
+                val remainTimeInVincible = AppUtils.calculateRemainTime(currentState.invincibleTime, currentTime)
 
                 // 计算新的结束时间
                 val newBonusFoodEndTime = currentState.bonusFoodEndTime.takeIf { it != 0L }
@@ -125,24 +131,17 @@ class SnakeViewModel(context: Context) : ViewModel() {
 
             // 处理蛇头的位置
             val head = currentState.snake.first()
-            var newHead = when (currentState.direction) {
-                Direction.UP -> Pair(head.first, (head.second - 1))
-                Direction.DOWN -> Pair(head.first, (head.second + 1))
-                Direction.LEFT -> Pair((head.first - 1), head.second)
-                Direction.RIGHT -> Pair((head.first + 1), head.second)
-                else -> {head}
-            }
+            var newHead = AppUtils.getNextPosition(head, currentState.direction)
 
             // 判断碰撞
             if (_gameState.value.isOpen) {
                 newHead = Pair((newHead.first + _gameState.value.gridSize) % _gameState.value.gridSize, (newHead.second + _gameState.value.gridSize) % _gameState.value.gridSize)
-                if (isCollisionBody(newHead) && !isInvincible){
+                if (AppUtils.isCollisionBody(newHead, _gameState.value) && !isInvincible){
                     return@update currentState.copy(isGameOver = true)
                 }
             }
-            else if (isCollision(newHead)) {
-                if (isInvincible) return@update currentState.copy(invincibleCountdownTime = newInvincibleCountdownTime)
-                else return@update currentState.copy(isGameOver = true)
+            else if (AppUtils.isCollision(newHead, _gameState.value)) {
+                if (!isInvincible) return@update currentState.copy(isGameOver = true)
             }
 
             // 处理蛇的身体
@@ -211,23 +210,6 @@ class SnakeViewModel(context: Context) : ViewModel() {
         }
     }
 
-    // 计算remain时间的函数
-    private fun calculateRemainTime(endTime: Long, currentTime: Long): Long {
-        return if (endTime != 0L) endTime - currentTime else 0L
-    }
-
-    private fun isCollisionBody(position: Pair<Int, Int>): Boolean {
-        return position in _gameState.value.snake
-    }
-
-    private fun isCollision(position: Pair<Int, Int>): Boolean {
-        return position.first < 0 ||
-                position.first >= _gameState.value.gridSize ||
-                position.second < 0 ||
-                position.second >= _gameState.value.gridSize ||
-                position in _gameState.value.snake
-    }
-
     private fun generateRandomFood(
         snake: List<Pair<Int, Int>>,
         mapWidth: Int,
@@ -258,6 +240,10 @@ class SnakeViewModel(context: Context) : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         gameJob?.cancel()
+        // 在ViewModel被清除时保存Q表
+        if (_gameState.value.isAIMode2) {
+            qLearningAgent.forceSave()
+        }
     }
 
     //===================================================
@@ -265,7 +251,10 @@ class SnakeViewModel(context: Context) : ViewModel() {
 
     fun toggleAIMode() {
         _gameState.update {
-            it.copy(isAIMode1 = !it.isAIMode1)
+            it.copy(
+                isAIMode1 = !it.isAIMode1,
+                isAIMode2 = false
+            )
         }
 
         if (_gameState.value.isAIMode1) startAIControl()
@@ -287,7 +276,10 @@ class SnakeViewModel(context: Context) : ViewModel() {
 
     fun toggleAIMode2() {
         _gameState.update {
-            it.copy(isAIMode2 = !it.isAIMode2)
+            it.copy(
+                isAIMode2 = !it.isAIMode2,
+                isAIMode1 = false
+            )
         }
 
         if (_gameState.value.isAIMode2) startAIControl2()
@@ -297,36 +289,28 @@ class SnakeViewModel(context: Context) : ViewModel() {
     // 启动Q-learning AI控制
     private fun startAIControl2() {
         viewModelScope.launch {
-            snakeQLearningAI.setEpsilon(if (AppUtils.isInvincible(_gameState.value)) 0.3 else 0.1) // 无敌模式下增加探索率
             while (_gameState.value.isAIMode2 && !_gameState.value.isGameOver) {
                 val currentState = _gameState.value
-                val action = snakeQLearningAI.evaluateDirections(currentState)
 
+                // 获取当前状态
+                val state = qLearningAgent.getState(currentState)
+
+                // 选择动作
+                val action = qLearningAgent.getNextDirection(currentState)
+
+                // 获取新状态
+                val newState = _gameState.value
+                val newHead = AppUtils.getNextPosition(currentState.snake.first(), action)
+
+                // 计算奖励并更新Q值
+                val reward = qLearningAgent.calculateReward(newState, newHead)
+                qLearningAgent.updateQValue(state, action, reward, qLearningAgent.getState(newState))
+
+                // 执行动作
                 changeDirection(action)
 
+                // 等待游戏更新
                 delay(currentState.gameSpeed)
-
-                // 处理奖励和更新 Q 值
-                val nextState = _gameState.value
-
-                val head = _gameState.value.snake.first()
-                val newHead = when (action) {
-                    Direction.UP -> Pair(head.first, (head.second - 1))
-                    Direction.DOWN -> Pair(head.first, (head.second + 1))
-                    Direction.LEFT -> Pair((head.first - 1), head.second)
-                    Direction.RIGHT -> Pair((head.first + 1), head.second)
-                    else -> {head}
-                }
-
-                val reward = when {
-                    nextState.isGameOver -> -100.0
-                    newHead == nextState.food.position -> 10.0
-                    else -> -1.0
-                }
-
-                val state = snakeQLearningAI.getState(currentState)
-                val nextStateString = snakeQLearningAI.getState(nextState)
-                snakeQLearningAI.updateQValue(state, action, reward, nextStateString)
             }
         }
     }

@@ -95,7 +95,7 @@ fun SettingDialog(
     onSave: (Int, Long, Boolean) -> Unit
 ) {
     val speedOptions = listOf(300L, 275L, 250L, 225L, 200L, 175L, 150L, 125L, 100L, 75L, 50L)
-    val initialSpeedIndex = speedOptions.indexOfFirst { it == currentGameSpeed }.coerceAtLeast(0)
+    val initialSpeedIndex = speedOptions.indexOfFirst { it == currentGameSpeed }.coerceAtLeast(1)
 
     var gridSize by remember { mutableIntStateOf(currentGridSize) }
     var speedIndex by remember { mutableIntStateOf(initialSpeedIndex) }

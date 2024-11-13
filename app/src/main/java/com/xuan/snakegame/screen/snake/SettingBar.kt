@@ -34,7 +34,7 @@ fun SettingBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // AI 托管开关
+        // AI 托管開關
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -53,7 +53,7 @@ fun SettingBar(
             )
         }
 
-        // AI 托管开关QLearning
+        // AI 托管開關QLearning
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -72,7 +72,7 @@ fun SettingBar(
             )
         }
 
-        // 设置按钮
+        // 設置按鈕
         Box(
             modifier = Modifier
                 .size(36.dp)

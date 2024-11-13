@@ -11,8 +11,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.xuan.snakegame.`object`.FoodType
 import com.xuan.snakegame.`object`.GameState
+import com.xuan.snakegame.util.AppUtils
 
 @Composable
 fun ScoreBoard(
@@ -23,22 +23,15 @@ fun ScoreBoard(
 
         //INVINCIBLE
         ScoreRow(
-            leftText = if (gameState.invincibleCountdownTime > 0) "無敵時間: ${gameState.invincibleCountdownTime / 1000}s" else "",
+            leftText = "無敵時間: ${if (gameState.invincibleCountdownTime > 0) "${gameState.invincibleCountdownTime / 1000}s" else "-"}",
             rightText = "",
         )
 
         // Display bonus food type and countdown
-        var type = ""
-        type = when(gameState.bonusFood?.type) {
-            FoodType.NORMAL -> "普通"
-            FoodType.SPEED_UP -> "加速"
-            FoodType.SLOW_DOWN -> "減速"
-            FoodType.INVINCIBLE -> "無敵"
-            else -> ""
-        }
+        val type: String = AppUtils.getFoodType(gameState)
         ScoreRow(
-            leftText = if (gameState.bonusFood != null) "TYPE: ${type}" else "",
-            rightText = if (gameState.countdownTime > 0) "COUNTDOWN: ${gameState.countdownTime / 1000}s" else "",
+            leftText = "TYPE: ${if (gameState.bonusFood != null) type else "-"}",
+            rightText = "COUNTDOWN: ${if (gameState.countdownTime > 0) "${gameState.countdownTime / 1000}s" else "-"}",
             rightTextColor = if (gameState.countdownTime > 0) Color.Red else LocalContentColor.current
         )
 
