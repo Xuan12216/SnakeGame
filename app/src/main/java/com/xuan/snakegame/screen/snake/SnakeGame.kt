@@ -52,8 +52,7 @@ fun SnakeGame(innerPadding: PaddingValues? = null) {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .aspectRatio(1f)
-                .background(Color.LightGray),
+                .aspectRatio(1f),
             gridSize = gameState.gridSize,
             gameState = gameState
         )

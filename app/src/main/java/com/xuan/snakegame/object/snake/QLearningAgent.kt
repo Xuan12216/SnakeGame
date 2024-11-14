@@ -17,7 +17,9 @@ class QLearningAgent (context: Context){
     private var qTable = loadQTable()
     private val learningRate = 0.1     // 學習率，決定新信息的權重
     private val discountFactor = 0.9   // 折扣因子，決定未來獎勵的重要性
-    private val epsilon = 0.1          // 探索率，決定隨機探索的概率
+    private var epsilon = 0.1          // 探索率，決定隨機探索的概率
+    private val minEpsilon = 0.01      // 最小探索率
+    private val epsilonDecay = 0.995   // 探索率衰減因子
     // 用於記錄最近的蛇頭位置，檢測循環行為
     private val recentPositions = LinkedHashSet<Pair<Int, Int>>()
     private val maxRecentSize = 5
@@ -96,7 +98,7 @@ class QLearningAgent (context: Context){
         val dangerRight = if (isInvincible) false else isDanger(head, Direction.RIGHT, gameState)
 
         // 返回狀態字符串
-        return "${sign(foodDeltaX)},${sign(foodDeltaY)},$bonusFoodInfo,$dangerUp,$dangerDown,$dangerLeft,$dangerRight,${if (isInvincible) 1 else 0}"
+        return "${sign(foodDeltaX)},${sign(foodDeltaY)},$bonusFoodInfo,$dangerUp,$dangerDown,$dangerLeft,$dangerRight,$isInvincible,${gameState.isOpen}"
     }
 
     // 輔助函數：將數值簡化為方向指示(-1, 0, 1)
@@ -108,7 +110,7 @@ class QLearningAgent (context: Context){
 
     // 檢查某個方向是否危險
     private fun isDanger(head: Pair<Int, Int>, direction: Direction, gameState: GameState): Boolean {
-        val nextPos = AppUtils.getNextPosition(head, direction)
+        val nextPos = AppUtils.getNextPosition(head, direction, gameState)
         return if (gameState.isOpen) {
             AppUtils.isCollisionBody(nextPos, gameState)// 在開放模式下，只需檢查是否會撞到蛇身
         }
@@ -119,6 +121,10 @@ class QLearningAgent (context: Context){
     fun getNextDirection(gameState: GameState): Direction {
         val state = getState(gameState)
         val head = gameState.snake.first()
+
+        // 動態調整探索率
+        epsilon *= epsilonDecay
+        epsilon = epsilon.coerceAtLeast(minEpsilon)
 
         // 如果當前狀態未見過，初始化Q值
         if (state !in qTable) {
@@ -136,7 +142,7 @@ class QLearningAgent (context: Context){
         val safeDirections = Direction.entries
             .filter { it != Direction.CENTER }
             .filter { direction ->
-                val nextPos = AppUtils.getNextPosition(head, direction)
+                val nextPos = AppUtils.getNextPosition(head, direction, gameState)
 
                 if (AppUtils.isInvincible(gameState)) true
                 else if (gameState.isOpen) !AppUtils.isCollisionBody(nextPos, gameState)//檢查是否會撞到蛇身
@@ -144,28 +150,21 @@ class QLearningAgent (context: Context){
             }
 
         // ε-貪心策略：有一定概率隨機探索
-        var test2: MutableMap<Direction, Double>? = null
         val direction =  if (Random.nextDouble() < epsilon) {
             // 從安全方向中隨機選擇
-            if (safeDirections.isNotEmpty()) {
-                safeDirections.random()
-            } else {
-                // 如果沒有安全方向，則選擇任意方向（可能會導致遊戲結束）
-                Direction.entries.filter { it != Direction.CENTER }.random()
-            }
-        } else {
+            if (safeDirections.isNotEmpty()) safeDirections.random()
+            // 如果沒有安全方向，則選擇任意方向
+            else Direction.entries.filter { it != Direction.CENTER }.random()
+        }
+        else {
             // 從安全方向中選擇Q值最大的動作
-            if (safeDirections.isNotEmpty()) {
-                test2 = qTable[state]
+            if (safeDirections.isNotEmpty())
                 safeDirections.maxByOrNull { qTable[state]?.get(it) ?: 0.0 } ?: Direction.UP
-            } else {
-                test2 = qTable[state]
-                // 如果沒有安全方向，選擇Q值最大的方向
-                qTable[state]?.maxByOrNull { it.value }?.key ?: Direction.UP
-            }
+            // 如果沒有安全方向，選擇Q值最大的方向
+            else qTable[state]?.maxByOrNull { it.value }?.key ?: Direction.UP
         }
 
-        println("TestXuan: $safeDirections: direction: $direction: test2: $test2: state: $state: size: ${qTable.size}")
+        println("TestXuan: $safeDirections: direction: $direction: state: $state: size: ${qTable.size}")
 
         return direction
     }
@@ -199,19 +198,25 @@ class QLearningAgent (context: Context){
     fun calculateReward(gameState: GameState, newHead: Pair<Int, Int>): Double {
         var reward = 0.0
         val foodList = listOfNotNull(gameState.food.position, gameState.bonusFood?.position)
+        val nearestFood = foodList.minByOrNull { manhattanDistance(newHead, it) }// 找到最近的食物
 
         // 處理食物和bonus food的獎勵
         foodList.forEach { food ->
             // 如果吃到食物，給予獎勵
             if (newHead == food) {
                 reward += 1.0
+                // 如果是最近的食物，額外獎勵
+                if (food == nearestFood) reward += 0.5
                 if (AppUtils.isInvincible(gameState)) reward += 0.5
             }
 
             // 根據與食物的距離給予獎勵或懲罰
             val oldDistance = manhattanDistance(gameState.snake.first(), food)
             val newDistance = manhattanDistance(newHead, food)
-            reward += (oldDistance - newDistance) * 0.1
+
+            // 對最近的食物給予更高的權重
+            val distanceWeight = if (food == nearestFood) 0.2 else 0.1
+            reward += (oldDistance - newDistance) * distanceWeight
         }
 
         // 如果遊戲結束，給予懲罰

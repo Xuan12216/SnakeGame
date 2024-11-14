@@ -71,7 +71,7 @@ class SnakeAI {
 
         // 評估每個方向
         val directionScores = possibleDirections.map { direction ->
-            val nextPos = AppUtils.getNextPosition(head, direction)
+            val nextPos = AppUtils.getNextPosition(head, direction, gameState)
             val adjustedPos = if (gameState.isOpen) {
                 Pair(
                     (nextPos.first + gameState.gridSize) % gameState.gridSize,
@@ -108,7 +108,7 @@ class SnakeAI {
         // 如果所有方向都不安全且處於無敵狀態，選擇距離目標最近的方向
         return if (bestDirection?.second == Int.MIN_VALUE && isInvincible) {
             possibleDirections.minByOrNull { direction ->
-                val nextPos = AppUtils.getNextPosition(head, direction)
+                val nextPos = AppUtils.getNextPosition(head, direction, gameState)
                 if (gameState.isOpen) {
                     val adjustedPos = Pair(
                         (nextPos.first + gameState.gridSize) % gameState.gridSize,

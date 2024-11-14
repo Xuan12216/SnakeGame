@@ -22,14 +22,28 @@ class AppUtils {
             return type
         }
 
-        fun getNextPosition(current: Pair<Int, Int>, direction: Direction): Pair<Int, Int> {
-            return when (direction) {
+        fun getNextPosition(
+            current: Pair<Int, Int>,
+            direction: Direction,
+            gameState: GameState
+        ): Pair<Int, Int> {
+            val nextPosition = when (direction) {
                 Direction.UP -> Pair(current.first, current.second - 1)
                 Direction.DOWN -> Pair(current.first, current.second + 1)
                 Direction.LEFT -> Pair(current.first - 1, current.second)
                 Direction.RIGHT -> Pair(current.first + 1, current.second)
                 else -> current
             }
+
+            var x = nextPosition.first
+            if (x < 0) x = 0
+            else if (x > gameState.gridSize) x = gameState.gridSize
+
+            var y = nextPosition.second
+            if (y < 0) y = 0
+            else if (y > gameState.gridSize) y = gameState.gridSize
+
+            return Pair(x, y)
         }
 
         // 計算remain時間的函數
